@@ -34,16 +34,10 @@ function App() {
                     <Trans
                         i18nKey='app.footer_credits'
                         components={{
-                            authorLink: (
-                                <a
-                                    className='underline'
-                                    href='https://github.com/PierreMesure/whisper-web'
-                                />
-                            ),
                             demoLink: (
                                 <a
                                     className='underline'
-                                    href='https://github.com/Xenova/whisper-web'
+                                    href='https://github.com/PierreMesure/whisper-web'
                                 />
                             ),
                         }}
