@@ -207,4 +207,8 @@ export default {
     DEFAULT_QUANTIZED: isMobileOrTablet,
     DEFAULT_DTYPE: "q4",
     DEFAULT_GPU: false,
+    DEFAULT_DIARIZE: false,
+    DIARIZATION_SEGMENTATION_MODEL: "onnx-community/pyannote-segmentation-3.0",
+    DIARIZATION_EMBEDDING_MODEL:
+        "onnx-community/wespeaker-voxceleb-resnet34-LM",
 };

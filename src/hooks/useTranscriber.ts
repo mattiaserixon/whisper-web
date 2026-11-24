@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorker } from "./useWorker";
 import { useTranslation } from "react-i18next";
 import Constants from "../utils/Constants";
+import {
+    DiarizationStatus,
+    TranscriptSegment,
+} from "../utils/TranscriptTypes";
 
-interface ProgressItem {
+export interface ProgressItem {
     file: string;
     loaded: number;
     progress: number;
@@ -13,10 +17,13 @@ interface ProgressItem {
 }
 
 interface TranscriberUpdateData {
+    requestId?: number;
+    status: "update" | "complete";
     data: {
         text: string;
-        chunks: { text: string; timestamp: [number, number | null] }[];
-        tps: number;
+        chunks: TranscriptSegment[];
+        tps?: number;
+        willDiarize?: boolean;
     };
 }
 
@@ -24,7 +31,8 @@ export interface TranscriberData {
     isBusy: boolean;
     tps?: number;
     text: string;
-    chunks: { text: string; timestamp: [number, number | null] }[];
+    chunks: TranscriptSegment[];
+    audioDuration?: number;
 }
 
 export interface Transcriber {
@@ -44,6 +52,19 @@ export interface Transcriber {
     setSubtask: (subtask: string) => void;
     language?: string;
     setLanguage: (language: string) => void;
+    diarize: boolean;
+    setDiarize: (diarize: boolean) => void;
+    diarizationStatus: DiarizationStatus;
+    diarizationProgress: number;
+    diarizationError?: string;
+    cancelDiarization: () => void;
+}
+
+function isSameProgressFile(item: ProgressItem, message: ProgressItem): boolean {
+    if (item.name && message.name) {
+        return item.name === message.name && item.file === message.file;
+    }
+    return item.file === message.file;
 }
 
 export function useTranscriber(): Transcriber {
@@ -52,18 +73,36 @@ export function useTranscriber(): Transcriber {
     );
     const [isBusy, setIsBusy] = useState(false);
     const [isModelLoading, setIsModelLoading] = useState(false);
-
     const [progressItems, setProgressItems] = useState<ProgressItem[]>([]);
+
+    const [diarize, setDiarize] = useState<boolean>(Constants.DEFAULT_DIARIZE);
+    const [diarizationStatus, setDiarizationStatus] =
+        useState<DiarizationStatus>("disabled");
+    const [diarizationProgress, setDiarizationProgress] = useState<number>(0);
+    const [diarizationError, setDiarizationError] = useState<
+        string | undefined
+    >(undefined);
+
+    const activeRequestIdRef = useRef<number>(0);
+    const activeAudioDurationRef = useRef<number | undefined>(undefined);
 
     const webWorker = useWorker((event) => {
         const message = event.data;
-        // Update the state with the result
+        if (!message) return;
+
+        // Ignore stale worker events from superseded or cancelled requests
+        if (
+            message.requestId !== undefined &&
+            message.requestId !== activeRequestIdRef.current
+        ) {
+            return;
+        }
+
         switch (message.status) {
             case "progress":
-                // Model file progress: update one of the progress items.
                 setProgressItems((prev) =>
                     prev.map((item) => {
-                        if (item.file === message.file) {
+                        if (isSameProgressFile(item, message)) {
                             return { ...item, progress: message.progress };
                         }
                         return item;
@@ -79,33 +118,87 @@ export function useTranscriber(): Transcriber {
                     text: updateMessage.data.text,
                     tps: updateMessage.data.tps,
                     chunks: updateMessage.data.chunks,
+                    audioDuration: activeAudioDurationRef.current,
                 });
                 setIsBusy(busy);
+                if (message.status === "complete") {
+                    if (updateMessage.data.willDiarize) {
+                        setDiarizationStatus("loading_models");
+                        setDiarizationProgress(0);
+                    } else {
+                        setDiarizationStatus("disabled");
+                    }
+                }
+                break;
+            }
+            case "diarization_status": {
+                const nextStatus =
+                    message.diarizationStatus as DiarizationStatus;
+                setDiarizationStatus(nextStatus);
+                if (typeof message.progress === "number") {
+                    setDiarizationProgress(message.progress);
+                }
+                if (nextStatus === "cancelled") {
+                    setIsModelLoading(false);
+                    setProgressItems([]);
+                }
+                break;
+            }
+            case "diarization_complete": {
+                setTranscript((prev) =>
+                    prev
+                        ? {
+                              ...prev,
+                              chunks: message.data.chunks,
+                          }
+                        : prev,
+                );
+                setDiarizationStatus("ready");
+                setDiarizationProgress(100);
+                setIsModelLoading(false);
+                setProgressItems([]);
+                break;
+            }
+            case "diarization_unavailable": {
+                setDiarizationStatus("unavailable");
+                setDiarizationError(message.error);
+                setIsModelLoading(false);
+                setProgressItems([]);
                 break;
             }
             case "initiate":
-                // Model file start load: add a new progress item to the list.
                 setIsModelLoading(true);
-                setProgressItems((prev) => [...prev, message]);
+                setProgressItems((prev) => {
+                    if (prev.some((item) => isSameProgressFile(item, message))) {
+                        return prev;
+                    }
+                    return [...prev, message];
+                });
                 break;
             case "ready":
                 setIsModelLoading(false);
                 break;
             case "error":
                 setIsBusy(false);
+                setIsModelLoading(false);
+                setDiarizationStatus("disabled");
                 alert(
                     `An error occurred: "${message.data.message}". Please file a bug report.`,
                 );
                 break;
             case "done":
-                // Model file loaded: remove the progress item from the list.
-                setProgressItems((prev) =>
-                    prev.filter((item) => item.file !== message.file),
-                );
+                setProgressItems((prev) => {
+                    const remaining = prev.filter(
+                        (item) => !isSameProgressFile(item, message),
+                    );
+                    if (remaining.length === 0) {
+                        setIsModelLoading(false);
+                    }
+                    return remaining;
+                });
                 break;
 
             default:
-                // initiate/download/done
                 break;
         }
     });
@@ -135,15 +228,55 @@ export function useTranscriber(): Transcriber {
         };
     }, [i18n]);
 
+    const cancelDiarization = useCallback(() => {
+        if (activeRequestIdRef.current > 0) {
+            webWorker.postMessage({
+                type: "cancel_diarization",
+                requestId: activeRequestIdRef.current,
+            });
+        }
+        setDiarizationStatus("cancelled");
+        setIsModelLoading(false);
+        setProgressItems([]);
+    }, [webWorker]);
+
     const onInputChange = useCallback(() => {
+        if (activeRequestIdRef.current > 0) {
+            webWorker.postMessage({
+                type: "cancel",
+                requestId: activeRequestIdRef.current,
+            });
+        }
+        activeRequestIdRef.current += 1;
+        activeAudioDurationRef.current = undefined;
         setTranscript(undefined);
-    }, []);
+        setIsBusy(false);
+        setIsModelLoading(false);
+        setProgressItems([]);
+        setDiarizationStatus("disabled");
+        setDiarizationProgress(0);
+        setDiarizationError(undefined);
+    }, [webWorker]);
 
     const postRequest = useCallback(
         async (audioData: AudioBuffer | undefined) => {
             if (audioData) {
+                if (activeRequestIdRef.current > 0) {
+                    webWorker.postMessage({
+                        type: "cancel",
+                        requestId: activeRequestIdRef.current,
+                    });
+                }
+
+                const requestId = activeRequestIdRef.current + 1;
+                activeRequestIdRef.current = requestId;
+                activeAudioDurationRef.current = audioData.duration;
+
                 setTranscript(undefined);
                 setIsBusy(true);
+                setDiarizationError(undefined);
+                setDiarizationProgress(0);
+                setDiarizationStatus(diarize ? "pending" : "disabled");
 
                 let audio;
                 if (audioData.numberOfChannels === 2) {
@@ -162,10 +295,13 @@ export function useTranscriber(): Transcriber {
                 }
 
                 webWorker.postMessage({
+                    type: "transcribe",
+                    requestId,
                     audio,
                     model,
                     dtype,
                     gpu,
+                    diarize,
                     subtask: !model.endsWith(".en") ? subtask : null,
                     language:
                         !model.endsWith(".en") && language !== "auto"
@@ -174,7 +310,7 @@ export function useTranscriber(): Transcriber {
                 });
             }
         },
-        [webWorker, model, dtype, gpu, subtask, language],
+        [webWorker, model, dtype, gpu, subtask, language, diarize],
     );
 
     const transcriber = useMemo(() => {
@@ -195,6 +331,12 @@ export function useTranscriber(): Transcriber {
             setSubtask,
             language,
             setLanguage,
+            diarize,
+            setDiarize,
+            diarizationStatus,
+            diarizationProgress,
+            diarizationError,
+            cancelDiarization,
         };
     }, [
         onInputChange,
@@ -208,6 +350,11 @@ export function useTranscriber(): Transcriber {
         gpu,
         subtask,
         language,
+        diarize,
+        diarizationStatus,
+        diarizationProgress,
+        diarizationError,
+        cancelDiarization,
     ]);
 
     return transcriber;

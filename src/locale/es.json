@@ -25,6 +25,8 @@
             "settings": "Configuraciones",
             "gpu": "GPU",
             "gpu_disabled": "GPU (navegador no compatible)",
+            "identify_speakers": "Identificar hablantes localmente en este dispositivo",
+            "identify_speakers_hint": "Opcional. Descarga modelos de voz (~13 MB la primera vez) y analiza quién habla localmente en tu navegador.",
             "clear_cache": "Borrar caché",
             "info_title": "Whisper-web",
             "info_content": "Whisper-web es un pequeño sitio web para ayudarte a transcribir audio a texto.<1></1><1></1>La primera vez que le das un archivo, descargará un modelo de IA abierta y realizará la transcripción localmente en tu navegador. Esto significa que tu archivo de audio nunca saldrá de tu dispositivo. También significa que la transcripción será lenta o fallará si tu computadora/teléfono inteligente no es lo suficientemente potente para realizarla.<1></1><1></1>En la configuración (esquina inferior derecha), puedes elegir entre diferentes modelos y varios niveles de cuantización. Un modelo más pequeño con menor cuantización será más rápido pero cometerá más errores. Por defecto, Whisper-web utiliza modelos pequeños, pero puedes probar uno más grande y ver si funciona en tu dispositivo.<1></1><1></1>Para la mayoría de los idiomas, es mejor usar <4>los modelos oficiales de OpenAI</4> (Multilingües), pero para el sueco o el noruego se recomienda usar versiones que han sido entrenadas específicamente para ellos.<1></1><1></1>Los modelos suecos se llaman <8>KB-whisper</8> y han sido entrenados por la <12>biblioteca nacional</12> con datos de debates parlamentarios y el servicio público sueco. Los noruegos se llaman <16>nb-whisper</16> y también han sido entrenados por la <20>biblioteca nacional</20> del país.<1></1><1></1>El código fuente de este proyecto está disponible en <23>Github</23>. Siéntete libre de reutilizarlo o contribuir a él.<1></1><1></1>El sitio web está alojado en <26>statichost.eu</26>, un servicio amigable con la privacidad para alojar sitios estáticos."
@@ -40,7 +42,22 @@
         },
         "transcript": {
             "export": "Exportar",
-            "tokens_per_second": "tokens/segundo"
+            "export_txt_plain": "TXT (texto plano)",
+            "export_txt_structured": "TXT (con marcas de tiempo)",
+            "tokens_per_second": "tokens/segundo",
+            "column_time": "Tiempo",
+            "column_speaker": "Hablante",
+            "column_text": "Transcripción",
+            "seek_to_time": "Saltar a {{time}} en el reproductor de audio",
+            "speaker_n": "Hablante {{number}}",
+            "overlapping_speech": "Habla superpuesta",
+            "multiple_speakers": "Varios hablantes",
+            "unknown_speaker": "Hablante desconocido",
+            "analyzing_speaker_badge": "Analizando…",
+            "diarization_loading": "Cargando modelos locales de hablantes…",
+            "diarization_analyzing": "Identificando hablantes localmente en tu dispositivo ({{progress}} %)... La transcripción ya está lista para leer y exportar.",
+            "cancel_diarization": "Cancelar",
+            "diarization_unavailable": "No se pudo completar la identificación de hablantes para esta grabación. Se muestra la transcripción con marcas de tiempo sin etiquetas de hablante."
         },
         "language_selector": {
             "title": "Idioma",

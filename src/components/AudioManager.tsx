@@ -9,7 +9,7 @@ import React, {
 import axios from "axios";
 import Modal from "./modal/Modal";
 import { UrlInput } from "./modal/UrlInput";
-import AudioPlayer from "./AudioPlayer";
+import AudioPlayer, { AudioSeekRequest } from "./AudioPlayer";
 import { TranscribeButton } from "./TranscribeButton";
 import Constants, {
     AudioSource,
@@ -32,7 +32,14 @@ function titleCase(str: string) {
         .join("");
 }
 
-export function AudioManager(props: { transcriber: Transcriber }) {
+export function AudioManager(props: {
+    transcriber: Transcriber;
+    seekRequest?: AudioSeekRequest;
+    onTimeUpdate?: (currentTime: number) => void;
+    onPlayStateChange?: (isPlaying: boolean) => void;
+    onAudioLoadedChange?: (hasAudio: boolean) => void;
+}) {
+    const { t } = useTranslation();
     const [progress, setProgress] = useState<number | undefined>(0);
     const [audioData, setAudioData] = useState<
         | {
@@ -44,6 +51,11 @@ export function AudioManager(props: { transcriber: Transcriber }) {
         | undefined
     >(undefined);
     const requestAbortControllerRef = useRef<AbortController | null>(null);
+
+    useEffect(() => {
+        props.onAudioLoadedChange?.(Boolean(audioData));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [audioData]);
 
     const resetAudio = () => {
         setAudioData(undefined);
@@ -201,7 +213,38 @@ export function AudioManager(props: { transcriber: Transcriber }) {
                     <AudioPlayer
                         audioUrl={audioData.url}
                         mimeType={audioData.mimeType}
+                        seekRequest={props.seekRequest}
+                        onTimeUpdate={props.onTimeUpdate}
+                        onPlayStateChange={props.onPlayStateChange}
                     />
+
+                    <div className='w-full px-4 mb-2'>
+                        <label
+                            htmlFor='diarize-inline'
+                            className='flex items-start gap-3 p-3 rounded-lg bg-white/90 shadow-sm ring-1 ring-slate-700/10 cursor-pointer hover:bg-slate-50 transition-colors'
+                        >
+                            <input
+                                id='diarize-inline'
+                                type='checkbox'
+                                className='mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500'
+                                checked={props.transcriber.diarize}
+                                disabled={props.transcriber.isBusy}
+                                onChange={(e) =>
+                                    props.transcriber.setDiarize(
+                                        e.target.checked,
+                                    )
+                                }
+                            />
+                            <span className='flex flex-col text-left'>
+                                <span className='text-sm font-medium text-slate-900'>
+                                    {t("manager.identify_speakers")}
+                                </span>
+                                <span className='text-xs text-slate-500'>
+                                    {t("manager.identify_speakers_hint")}
+                                </span>
+                            </span>
+                        </label>
+                    </div>
 
                     <div className='relative w-full flex justify-center items-center'>
                         <TranscribeButton
@@ -215,14 +258,24 @@ export function AudioManager(props: { transcriber: Transcriber }) {
                     {props.transcriber.progressItems.length > 0 && (
                         <div className='relative z-10 p-4 w-full text-center'>
                             <label>{t("manager.loading")}</label>
-                            {props.transcriber.progressItems.map((data) => (
-                                <div key={data.file}>
-                                    <Progress
-                                        text={data.file}
-                                        percentage={data.progress}
-                                    />
-                                </div>
-                            ))}
+                            {props.transcriber.progressItems.map((data) => {
+                                const modelShort = data.name
+                                    ? data.name.split("/").pop()
+                                    : undefined;
+                                const label = modelShort
+                                    ? `${modelShort} · ${data.file}`
+                                    : data.file;
+                                return (
+                                    <div
+                                        key={`${data.name ?? "model"}/${data.file}`}
+                                    >
+                                        <Progress
+                                            text={label}
+                                            percentage={data.progress}
+                                        />
+                                    </div>
+                                );
+                            })}
                         </div>
                     )}
                 </>
@@ -489,8 +542,8 @@ function SettingsModal(props: {
                             </option>
                         ))}
                     </select>
-                    <div className='flex justify-between items-center mb-3 px-1'>
-                        <div className='flex'>
+                    <div className='flex flex-col gap-2 mb-3 px-1 mt-2'>
+                        <div className='flex items-center'>
                             <input
                                 id='gpu'
                                 type='checkbox'
@@ -500,10 +553,32 @@ function SettingsModal(props: {
                                     props.transcriber.setGPU(e.target.checked);
                                 }}
                             ></input>
-                            <label htmlFor={"gpu"} className='ms-1'>
+                            <label htmlFor={"gpu"} className='ms-2 text-sm'>
                                 {IS_WEBGPU_AVAILABLE
                                     ? t("manager.gpu")
                                     : t("manager.gpu_disabled")}
+                            </label>
+                        </div>
+                        <div className='flex items-start'>
+                            <input
+                                id='diarize-settings'
+                                type='checkbox'
+                                className='mt-1'
+                                checked={props.transcriber.diarize}
+                                onChange={(e) => {
+                                    props.transcriber.setDiarize(
+                                        e.target.checked,
+                                    );
+                                }}
+                            ></input>
+                            <label
+                                htmlFor='diarize-settings'
+                                className='ms-2 text-sm'
+                            >
+                                <span>{t("manager.identify_speakers")}</span>
+                                <span className='block text-xs text-gray-500'>
+                                    {t("manager.identify_speakers_hint")}
+                                </span>
                             </label>
                         </div>
                     </div>
